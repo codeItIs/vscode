@@ -35,10 +35,8 @@ abstract class AbstractGettingStarted implements IWorkbenchContribution {
 
 		if (firstStartup && this.welcomePageURL) {
 			this.telemetryService.getTelemetryInfo().then(info => {
-				if (this.telemetryService.getExperiments().openGettingStarted !== false) {
-					let url = this.getUrl(info);
-					this.openExternal(url);
-				}
+				let url = this.getUrl(info);
+				this.openExternal(url);
 				this.storageService.store(AbstractGettingStarted.hideWelcomeSettingskey, true);
 			});
 		}
@@ -71,7 +69,8 @@ export class GettingStarted implements IWorkbenchContribution {
 	) {
 		this.appName = product.nameLong;
 
-		if (product.welcomePage && !environmentService.isExtensionDevelopment /* do not open a browser when we run an extension */) {
+		/* do not open a browser when we run an extension or --noGettingStarted is provided */
+		if (product.welcomePage && !environmentService.isExtensionDevelopment && !environmentService.noGettingStarted) {
 			this.welcomePageURL = product.welcomePage;
 			this.handleWelcome();
 		}
@@ -104,10 +103,8 @@ export class GettingStarted implements IWorkbenchContribution {
 
 		if (firstStartup && this.welcomePageURL) {
 			this.telemetryService.getTelemetryInfo().then(info => {
-				if (this.telemetryService.getExperiments().openGettingStarted !== false) {
-					let url = this.getUrl(info);
-					this.openExternal(url);
-				}
+				let url = this.getUrl(info);
+				this.openExternal(url);
 				this.storageService.store(GettingStarted.hideWelcomeSettingskey, true);
 			});
 		}

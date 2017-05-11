@@ -17,7 +17,7 @@ import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import { Scrollable, ScrollState, ScrollEvent, INewScrollState, ScrollbarVisibility } from 'vs/base/common/scrollable';
 import { Widget } from 'vs/base/browser/ui/widget';
 import { TimeoutTimer } from 'vs/base/common/async';
-import { FastDomNode, createFastDomNode } from 'vs/base/browser/styleMutator';
+import { FastDomNode, createFastDomNode } from 'vs/base/browser/fastDomNode';
 import { ScrollbarHost } from 'vs/base/browser/ui/scrollbar/abstractScrollbar';
 import Event, { Emitter } from 'vs/base/common/event';
 
@@ -37,9 +37,9 @@ export class ScrollableElement extends Widget {
 	private _horizontalScrollbar: HorizontalScrollbar;
 	private _domNode: HTMLElement;
 
-	private _leftShadowDomNode: FastDomNode;
-	private _topShadowDomNode: FastDomNode;
-	private _topLeftShadowDomNode: FastDomNode;
+	private _leftShadowDomNode: FastDomNode<HTMLElement>;
+	private _topShadowDomNode: FastDomNode<HTMLElement>;
+	private _topLeftShadowDomNode: FastDomNode<HTMLElement>;
 
 	private _listenOnDomNode: HTMLElement;
 
@@ -145,6 +145,10 @@ export class ScrollableElement extends Widget {
 		this._verticalScrollbar.delegateMouseDown(browserEvent);
 	}
 
+	public getVerticalSliderVerticalCenter(): number {
+		return this._verticalScrollbar.getVerticalSliderVerticalCenter();
+	}
+
 	public updateState(newState: INewScrollState): void {
 		this._scrollable.updateState(newState);
 	}
@@ -210,17 +214,6 @@ export class ScrollableElement extends Widget {
 	}
 
 	private _onMouseWheel(e: StandardMouseWheelEvent): void {
-		if (Platform.isMacintosh && e.browserEvent && this._options.saveLastScrollTimeOnClassName) {
-			// Mark dom node with timestamp of wheel event
-			let target = <HTMLElement>e.browserEvent.target;
-			if (target && target.nodeType === 1) {
-				let r = DomUtils.findParentWithClass(target, this._options.saveLastScrollTimeOnClassName);
-				if (r) {
-					r.setAttribute('last-scroll-time', String(new Date().getTime()));
-				}
-			}
-		}
-
 		let desiredScrollTop = -1;
 		let desiredScrollLeft = -1;
 
@@ -232,7 +225,10 @@ export class ScrollableElement extends Widget {
 				[deltaY, deltaX] = [deltaX, deltaY];
 			}
 
-			if (this._options.scrollYToX && !deltaX) {
+			// Convert vertical scrolling to horizontal if shift is held, this
+			// is handled at a higher level on Mac
+			const shiftConvert = !Platform.isMacintosh && e.browserEvent.shiftKey;
+			if ((this._options.scrollYToX || shiftConvert) && !deltaX) {
 				deltaX = deltaY;
 				deltaY = 0;
 			}
@@ -365,7 +361,9 @@ export class ScrollableElement extends Widget {
 	}
 
 	private _scheduleHide(): void {
-		this._hideTimeout.cancelAndSet(() => this._hide(), HIDE_TIMEOUT);
+		if (!this._mouseIsOver && !this._isDragging) {
+			this._hideTimeout.cancelAndSet(() => this._hide(), HIDE_TIMEOUT);
+		}
 	}
 }
 
@@ -403,7 +401,7 @@ export class DomScrollableElement extends ScrollableElement {
 
 function resolveOptions(opts: ScrollableElementCreationOptions): ScrollableElementResolvedOptions {
 	let result: ScrollableElementResolvedOptions = {
-		canUseTranslate3d: opts.canUseTranslate3d && Browser.canUseTranslate3d,
+		canUseTranslate3d: opts.canUseTranslate3d && Browser.supportsTranslate3d,
 		lazyRender: (typeof opts.lazyRender !== 'undefined' ? opts.lazyRender : false),
 		className: (typeof opts.className !== 'undefined' ? opts.className : ''),
 		useShadows: (typeof opts.useShadows !== 'undefined' ? opts.useShadows : true),
@@ -424,9 +422,7 @@ function resolveOptions(opts: ScrollableElementCreationOptions): ScrollableEleme
 		vertical: (typeof opts.vertical !== 'undefined' ? opts.vertical : ScrollbarVisibility.Auto),
 		verticalScrollbarSize: (typeof opts.verticalScrollbarSize !== 'undefined' ? opts.verticalScrollbarSize : 10),
 		verticalHasArrows: (typeof opts.verticalHasArrows !== 'undefined' ? opts.verticalHasArrows : false),
-		verticalSliderSize: (typeof opts.verticalSliderSize !== 'undefined' ? opts.verticalSliderSize : 0),
-
-		saveLastScrollTimeOnClassName: (typeof opts.saveLastScrollTimeOnClassName !== 'undefined' ? opts.saveLastScrollTimeOnClassName : null)
+		verticalSliderSize: (typeof opts.verticalSliderSize !== 'undefined' ? opts.verticalSliderSize : 0)
 	};
 
 	result.horizontalSliderSize = (typeof opts.horizontalSliderSize !== 'undefined' ? opts.horizontalSliderSize : result.horizontalScrollbarSize);

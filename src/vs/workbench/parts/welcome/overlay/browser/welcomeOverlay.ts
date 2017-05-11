@@ -17,7 +17,6 @@ import { localize } from 'vs/nls';
 import { Action } from 'vs/base/common/actions';
 import { IWorkbenchActionRegistry, Extensions } from 'vs/workbench/common/actionRegistry';
 import { SyncActionDescriptor } from 'vs/platform/actions/common/actions';
-import SCMPreview from 'vs/workbench/parts/scm/browser/scmPreview';
 import { ICommandService } from 'vs/platform/commands/common/commands';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import { RawContextKey, IContextKey, IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
@@ -50,7 +49,7 @@ const keys: Key[] = [
 		id: 'git',
 		arrow: '&larr;',
 		label: localize('welcomeOverlay.git', "Source code management"),
-		command: SCMPreview.enabled ? 'workbench.view.scm' : 'workbench.view.git'
+		command: 'workbench.view.scm'
 	},
 	{
 		id: 'debug',
@@ -178,11 +177,9 @@ class WelcomeOverlay {
 				}
 				$(div).span({ 'class': 'label' }).text(label);
 				if (command) {
-					const shortcut = this.keybindingService.lookupKeybindings(command)
-						.slice(0, 1)
-						.map(k => this.keybindingService.getLabelFor(k))[0];
+					const shortcut = this.keybindingService.lookupKeybinding(command);
 					if (shortcut) {
-						$(div).span({ 'class': 'shortcut' }).text(shortcut);
+						$(div).span({ 'class': 'shortcut' }).text(shortcut.getLabel());
 					}
 				}
 				if (arrowLast) {
@@ -193,18 +190,35 @@ class WelcomeOverlay {
 
 	public show() {
 		if (this._overlay.style('display') !== 'block') {
-			const welcomePage = document.getElementById('workbench.parts.editor') as HTMLDivElement;
 			this._overlay.display('block');
-			dom.addClass(welcomePage, 'blur-background');
+			const workbench = document.querySelector('.monaco-workbench') as HTMLElement;
+			dom.addClass(workbench, 'blur-background');
 			this._overlayVisible.set(true);
+			this.updateProblemsKey();
+		}
+	}
+
+	private updateProblemsKey() {
+		const problems = document.querySelector('.task-statusbar-item');
+		const key = this._overlay.getHTMLElement().querySelector('.key.problems') as HTMLElement;
+		if (problems instanceof HTMLElement) {
+			const target = problems.getBoundingClientRect();
+			const bounds = this._overlay.getHTMLElement().getBoundingClientRect();
+			const bottom = bounds.bottom - target.top + 3;
+			const left = (target.left + target.right) / 2 - bounds.left;
+			key.style.bottom = bottom + 'px';
+			key.style.left = left + 'px';
+		} else {
+			key.style.bottom = null;
+			key.style.left = null;
 		}
 	}
 
 	public hide() {
 		if (this._overlay.style('display') !== 'none') {
 			this._overlay.display('none');
-			const welcomePage = document.getElementById('workbench.parts.editor') as HTMLDivElement;
-			dom.removeClass(welcomePage, 'blur-background');
+			const workbench = document.querySelector('.monaco-workbench') as HTMLElement;
+			dom.removeClass(workbench, 'blur-background');
 			this._overlayVisible.reset();
 		}
 	}

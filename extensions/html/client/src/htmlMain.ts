@@ -6,7 +6,7 @@
 
 import * as path from 'path';
 
-import { languages, ExtensionContext, IndentAction } from 'vscode';
+import { languages, workspace, ExtensionContext, IndentAction } from 'vscode';
 import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind, Range, RequestType } from 'vscode-languageclient';
 import { EMPTY_ELEMENTS } from './htmlEmptyTagsShared';
 import { activateColorDecorations } from './colorDecorators';
@@ -29,6 +29,7 @@ export function activate(context: ExtensionContext) {
 
 	let packageInfo = getPackageInfo(context);
 	let telemetryReporter: TelemetryReporter = packageInfo && new TelemetryReporter(packageInfo.name, packageInfo.version, packageInfo.aiKey);
+	context.subscriptions.push(telemetryReporter);
 
 	// The server is implemented in node
 	let serverModule = context.asAbsolutePath(path.join('server', 'out', 'htmlServerMain.js'));
@@ -57,14 +58,17 @@ export function activate(context: ExtensionContext) {
 	};
 
 	// Create the language client and start the client.
-	let client = new LanguageClient('html', localize('htmlserver.name', 'HTML Language Server'), serverOptions, clientOptions, true);
+	let client = new LanguageClient('html', localize('htmlserver.name', 'HTML Language Server'), serverOptions, clientOptions);
 	let disposable = client.start();
 	context.subscriptions.push(disposable);
 	client.onReady().then(() => {
 		let colorRequestor = (uri: string) => {
 			return client.sendRequest(ColorSymbolRequest.type, uri).then(ranges => ranges.map(client.protocol2CodeConverter.asRange));
 		};
-		let disposable = activateColorDecorations(colorRequestor, { html: true, handlebars: true, razor: true });
+		let isDecoratorEnabled = (languageId: string) => {
+			return workspace.getConfiguration().get<boolean>('css.colorDecorators.enable');
+		};
+		let disposable = activateColorDecorations(colorRequestor, { html: true, handlebars: true, razor: true }, isDecoratorEnabled);
 		context.subscriptions.push(disposable);
 		client.onTelemetry(e => {
 			if (telemetryReporter) {

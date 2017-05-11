@@ -7,13 +7,13 @@
 import { IDisposable } from 'vs/base/common/lifecycle';
 import { TPromise } from 'vs/base/common/winjs.base';
 import { IModel } from 'vs/editor/common/editorCommon';
-import { TokenizationRegistry, ITokenizationSupport } from 'vs/editor/common/modes';
+import { ColorId, MetadataConsts, FontStyle, TokenizationRegistry, ITokenizationSupport } from 'vs/editor/common/modes';
 import { IModeService } from 'vs/editor/common/services/modeService';
 import { renderViewLine, RenderLineInput } from 'vs/editor/common/viewLayout/viewLineRenderer';
 import { ViewLineToken } from 'vs/editor/common/core/viewLineToken';
 import { LineTokens } from 'vs/editor/common/core/lineTokens';
 import * as strings from 'vs/base/common/strings';
-import { IStandaloneColorService } from 'vs/editor/common/services/standaloneColorService';
+import { IStandaloneThemeService } from 'vs/editor/common/services/standaloneThemeService';
 
 export interface IColorizerOptions {
 	tabSize?: number;
@@ -26,7 +26,7 @@ export interface IColorizerElementOptions extends IColorizerOptions {
 
 export class Colorizer {
 
-	public static colorizeElement(standaloneColorService: IStandaloneColorService, modeService: IModeService, domNode: HTMLElement, options: IColorizerElementOptions): TPromise<void> {
+	public static colorizeElement(themeService: IStandaloneThemeService, modeService: IModeService, domNode: HTMLElement, options: IColorizerElementOptions): TPromise<void> {
 		options = options || {};
 		let theme = options.theme || 'vs';
 		let mimeType = options.mimeType || domNode.getAttribute('lang') || domNode.getAttribute('data-lang');
@@ -35,7 +35,7 @@ export class Colorizer {
 			return undefined;
 		}
 
-		standaloneColorService.setTheme(theme);
+		themeService.setTheme(theme);
 
 		let text = domNode.firstChild.nodeValue;
 		domNode.className += 'monaco-editor ' + theme;
@@ -56,7 +56,7 @@ export class Colorizer {
 
 		return new TPromise<void>((c, e, p) => {
 			listener = TokenizationRegistry.onDidChange((e) => {
-				if (e.languages.indexOf(language) >= 0) {
+				if (e.changedLanguages.indexOf(language) >= 0) {
 					stopListening();
 					c(void 0);
 				}
@@ -106,6 +106,7 @@ export class Colorizer {
 			0,
 			-1,
 			'none',
+			false,
 			false
 		));
 		return renderResult.html;
@@ -113,7 +114,8 @@ export class Colorizer {
 
 	public static colorizeModelLine(model: IModel, lineNumber: number, tabSize: number = 4): string {
 		let content = model.getLineContent(lineNumber);
-		let tokens = model.getLineTokens(lineNumber, false);
+		model.forceTokenization(lineNumber);
+		let tokens = model.getLineTokens(lineNumber);
 		let inflatedTokens = tokens.inflate();
 		return this.colorizeLine(content, model.mightContainRTL(), inflatedTokens, tabSize);
 	}
@@ -126,6 +128,12 @@ function _colorize(lines: string[], tabSize: number, tokenizationSupport: IToken
 function _fakeColorize(lines: string[], tabSize: number): string {
 	let html: string[] = [];
 
+	const defaultMetadata = (
+		(FontStyle.None << MetadataConsts.FONT_STYLE_OFFSET)
+		| (ColorId.DefaultForeground << MetadataConsts.FOREGROUND_OFFSET)
+		| (ColorId.DefaultBackground << MetadataConsts.BACKGROUND_OFFSET)
+	) >>> 0;
+
 	for (let i = 0, length = lines.length; i < length; i++) {
 		let line = lines[i];
 
@@ -134,12 +142,13 @@ function _fakeColorize(lines: string[], tabSize: number): string {
 			line,
 			false,
 			0,
-			[new ViewLineToken(line.length, '')],
+			[new ViewLineToken(line.length, defaultMetadata)],
 			[],
 			tabSize,
 			0,
 			-1,
 			'none',
+			false,
 			false
 		));
 
@@ -153,12 +162,11 @@ function _fakeColorize(lines: string[], tabSize: number): string {
 function _actualColorize(lines: string[], tabSize: number, tokenizationSupport: ITokenizationSupport): string {
 	let html: string[] = [];
 	let state = tokenizationSupport.getInitialState();
-	let colorMap = TokenizationRegistry.getColorMap();
 
 	for (let i = 0, length = lines.length; i < length; i++) {
 		let line = lines[i];
 		let tokenizeResult = tokenizationSupport.tokenize2(line, state, 0);
-		let lineTokens = new LineTokens(colorMap, tokenizeResult.tokens, line);
+		let lineTokens = new LineTokens(tokenizeResult.tokens, line);
 		let renderResult = renderViewLine(new RenderLineInput(
 			false,
 			line,
@@ -170,6 +178,7 @@ function _actualColorize(lines: string[], tabSize: number, tokenizationSupport: 
 			0,
 			-1,
 			'none',
+			false,
 			false
 		));
 

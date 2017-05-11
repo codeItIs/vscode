@@ -7,11 +7,13 @@ import * as nls from 'vs/nls';
 import { TPromise } from 'vs/base/common/winjs.base';
 import * as objects from 'vs/base/common/objects';
 import * as lifecycle from 'vs/base/common/lifecycle';
+import { Constants } from 'vs/editor/common/core/uint';
 import { Range } from 'vs/editor/common/core/range';
-import { IModel, TrackedRangeStickiness, IModelDeltaDecoration, IModelDecorationsChangedEvent, IModelDecorationOptions } from 'vs/editor/common/editorCommon';
+import { IModel, TrackedRangeStickiness, IModelDeltaDecoration, IModelDecorationOptions } from 'vs/editor/common/editorCommon';
 import { IWorkbenchContribution } from 'vs/workbench/common/contributions';
 import { IDebugService, IBreakpoint, IRawBreakpoint, State } from 'vs/workbench/parts/debug/common/debug';
 import { IModelService } from 'vs/editor/common/services/modelService';
+import { IModelDecorationsChangedEvent } from 'vs/editor/common/model/textModelEvents';
 
 interface IDebugEditorModelData {
 	model: IModel;
@@ -21,6 +23,7 @@ interface IDebugEditorModelData {
 	breakpointDecorationsAsMap: Map<string, boolean>;
 	currentStackDecorations: string[];
 	dirty: boolean;
+	topStackFrameRange: Range;
 }
 
 const stickiness = TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges;
@@ -62,9 +65,12 @@ export class DebugEditorModelManager implements IWorkbenchContribution {
 
 		this.toDispose.push(this.debugService.getModel().onDidChangeBreakpoints(() => this.onBreakpointsChange()));
 		this.toDispose.push(this.debugService.getViewModel().onDidFocusStackFrame(() => this.onFocusStackFrame()));
-		this.toDispose.push(this.debugService.onDidChangeState(() => {
-			if (this.debugService.state === State.Inactive) {
-				this.modelDataMap.forEach(modelData => modelData.dirty = false);
+		this.toDispose.push(this.debugService.onDidChangeState(state => {
+			if (state === State.Inactive) {
+				this.modelDataMap.forEach(modelData => {
+					modelData.dirty = false;
+					modelData.topStackFrameRange = undefined;
+				});
 			}
 		}));
 	}
@@ -87,7 +93,8 @@ export class DebugEditorModelManager implements IWorkbenchContribution {
 			breakpointLines: breakpoints.map(bp => bp.lineNumber),
 			breakpointDecorationsAsMap,
 			currentStackDecorations: currentStackDecorations,
-			dirty: false
+			dirty: false,
+			topStackFrameRange: undefined
 		});
 	}
 
@@ -115,8 +122,8 @@ export class DebugEditorModelManager implements IWorkbenchContribution {
 		}
 
 		// only show decorations for the currently focussed thread.
-		const wholeLineRange = new Range(stackFrame.lineNumber, stackFrame.column, stackFrame.lineNumber, Number.MAX_VALUE);
-		const range = new Range(stackFrame.lineNumber, stackFrame.column, stackFrame.lineNumber, stackFrame.column + 1);
+		const columnUntilEOLRange = new Range(stackFrame.range.startLineNumber, stackFrame.range.startColumn, stackFrame.range.startLineNumber, Constants.MAX_SAFE_SMALL_INTEGER);
+		const range = new Range(stackFrame.range.startLineNumber, stackFrame.range.startColumn, stackFrame.range.startLineNumber, stackFrame.range.startColumn + 1);
 
 		// compute how to decorate the editor. Different decorations are used if this is a top stack frame, focussed stack frame,
 		// an exception or a stack frame that did not change the line number (we only decorate the columns, not the whole line).
@@ -130,19 +137,23 @@ export class DebugEditorModelManager implements IWorkbenchContribution {
 			if (stackFrame.thread.stoppedDetails && stackFrame.thread.stoppedDetails.reason === 'exception') {
 				result.push({
 					options: DebugEditorModelManager.TOP_STACK_FRAME_EXCEPTION_DECORATION,
-					range: wholeLineRange
+					range: columnUntilEOLRange
 				});
 			} else {
 				result.push({
 					options: DebugEditorModelManager.TOP_STACK_FRAME_DECORATION,
-					range: wholeLineRange
+					range: columnUntilEOLRange
 				});
 
 				if (this.modelDataMap.has(modelUriStr)) {
-					result.push({
-						options: DebugEditorModelManager.TOP_STACK_FRAME_COLUMN_DECORATION,
-						range: wholeLineRange
-					});
+					const modelData = this.modelDataMap.get(modelUriStr);
+					if (modelData.topStackFrameRange && modelData.topStackFrameRange.startLineNumber === stackFrame.range.startLineNumber && modelData.topStackFrameRange.startColumn !== stackFrame.range.startColumn) {
+						result.push({
+							options: DebugEditorModelManager.TOP_STACK_FRAME_INLINE_DECORATION,
+							range: columnUntilEOLRange
+						});
+					}
+					modelData.topStackFrameRange = columnUntilEOLRange;
 				}
 			}
 		} else {
@@ -153,7 +164,7 @@ export class DebugEditorModelManager implements IWorkbenchContribution {
 
 			result.push({
 				options: DebugEditorModelManager.FOCUSED_STACK_FRAME_DECORATION,
-				range: wholeLineRange
+				range: columnUntilEOLRange
 			});
 		}
 
@@ -192,7 +203,7 @@ export class DebugEditorModelManager implements IWorkbenchContribution {
 					enabled: breakpoint.enabled,
 					condition: breakpoint.condition,
 					hitCondition: breakpoint.hitCondition,
-					column: breakpoint.column
+					column: breakpoint.column ? decorationRange.startColumn : undefined
 				});
 			}
 		}
@@ -239,7 +250,7 @@ export class DebugEditorModelManager implements IWorkbenchContribution {
 	private createBreakpointDecorations(breakpoints: IBreakpoint[]): IModelDeltaDecoration[] {
 		return breakpoints.map((breakpoint) => {
 			const range = breakpoint.column ? new Range(breakpoint.lineNumber, breakpoint.column, breakpoint.lineNumber, breakpoint.column + 1)
-				: new Range(breakpoint.lineNumber, 1, breakpoint.lineNumber, Number.MAX_VALUE);
+				: new Range(breakpoint.lineNumber, 1, breakpoint.lineNumber, Constants.MAX_SAFE_SMALL_INTEGER); // Decoration has to have a width #20688
 			return {
 				options: this.getBreakpointDecorationOptions(breakpoint),
 				range
@@ -298,7 +309,6 @@ export class DebugEditorModelManager implements IWorkbenchContribution {
 
 	private static BREAKPOINT_DECORATION: IModelDecorationOptions = {
 		glyphMarginClassName: 'debug-breakpoint-glyph',
-		glyphMarginHoverMessage: nls.localize('breakpointHover', "Breakpoint"),
 		stickiness
 	};
 
@@ -349,10 +359,8 @@ export class DebugEditorModelManager implements IWorkbenchContribution {
 		stickiness
 	};
 
-	private static TOP_STACK_FRAME_COLUMN_DECORATION: IModelDecorationOptions = {
-		isWholeLine: false,
-		className: 'debug-top-stack-frame-column',
-		stickiness
+	private static TOP_STACK_FRAME_INLINE_DECORATION: IModelDecorationOptions = {
+		beforeContentClassName: 'debug-top-stack-frame-column'
 	};
 
 	private static FOCUSED_STACK_FRAME_DECORATION: IModelDecorationOptions = {

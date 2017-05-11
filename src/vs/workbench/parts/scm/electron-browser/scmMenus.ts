@@ -6,13 +6,37 @@
 'use strict';
 
 import 'vs/css!./media/scmViewlet';
+import { localize } from 'vs/nls';
+import { TPromise } from 'vs/base/common/winjs.base';
+import Event, { Emitter } from 'vs/base/common/event';
 import { IDisposable, dispose, empty as EmptyDisposable, toDisposable } from 'vs/base/common/lifecycle';
-import { IContextKeyService, IContextKey } from 'vs/platform/contextkey/common/contextkey';
+import { IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
 import { IMenuService, MenuId } from 'vs/platform/actions/common/actions';
-import { IAction } from 'vs/base/common/actions';
-import URI from 'vs/base/common/uri';
+import { IAction, Action } from 'vs/base/common/actions';
 import { fillInActions } from 'vs/platform/actions/browser/menuItemActionItem';
+import { ContextSubMenu } from 'vs/platform/contextview/browser/contextView';
+import { Separator } from 'vs/base/browser/ui/actionbar/actionbar';
 import { ISCMService, ISCMProvider, ISCMResource, ISCMResourceGroup } from 'vs/workbench/services/scm/common/scm';
+import { getSCMResourceContextKey } from './scmUtil';
+
+class SwitchProviderAction extends Action {
+
+	get checked(): boolean {
+		return this.scmService.activeProvider === this.provider;
+	}
+
+	constructor(
+		private provider: ISCMProvider,
+		@ISCMService private scmService: ISCMService
+	) {
+		super('scm.switchProvider', provider.label, '', true);
+	}
+
+	run(): TPromise<void> {
+		this.scmService.activeProvider = this.provider;
+		return TPromise.as(null);
+	}
+}
 
 export class SCMMenus implements IDisposable {
 
@@ -21,15 +45,15 @@ export class SCMMenus implements IDisposable {
 	private titleDisposable: IDisposable = EmptyDisposable;
 	private titleActions: IAction[] = [];
 	private titleSecondaryActions: IAction[] = [];
-	private activeProviderContextKey: IContextKey<string>;
+
+	private _onDidChangeTitle = new Emitter<void>();
+	get onDidChangeTitle(): Event<void> { return this._onDidChangeTitle.event; }
 
 	constructor(
 		@IContextKeyService private contextKeyService: IContextKeyService,
 		@ISCMService private scmService: ISCMService,
 		@IMenuService private menuService: IMenuService
 	) {
-		this.activeProviderContextKey = contextKeyService.createKey('scmProvider', '');
-
 		this.setActiveProvider(this.scmService.activeProvider);
 		this.scmService.onDidChangeProvider(this.setActiveProvider, this, this.disposables);
 	}
@@ -40,8 +64,6 @@ export class SCMMenus implements IDisposable {
 			this.titleDisposable = EmptyDisposable;
 		}
 
-		this.activeProviderContextKey.set(activeProvider ? activeProvider.id : '');
-
 		if (!activeProvider) {
 			return;
 		}
@@ -51,6 +73,7 @@ export class SCMMenus implements IDisposable {
 			this.titleActions = [];
 			this.titleSecondaryActions = [];
 			fillInActions(titleMenu, null, { primary: this.titleActions, secondary: this.titleSecondaryActions });
+			this._onDidChangeTitle.fire();
 		};
 
 		const listener = titleMenu.onDidChange(updateActions);
@@ -69,56 +92,57 @@ export class SCMMenus implements IDisposable {
 	}
 
 	getTitleSecondaryActions(): IAction[] {
-		return this.titleSecondaryActions;
+		const providerSwitchActions = this.scmService.providers
+			.map(p => new SwitchProviderAction(p, this.scmService));
+
+		let result = [];
+
+		if (this.titleSecondaryActions.length > 0) {
+			result = result.concat(this.titleSecondaryActions);
+		}
+
+		if (result.length > 0 && providerSwitchActions.length > 0) {
+			result.push(new Separator());
+		}
+
+		if (providerSwitchActions.length > 0) {
+			result.push(new ContextSubMenu(localize('switch provider', "Switch SCM Provider..."), providerSwitchActions));
+		}
+
+		return result;
 	}
 
 	getResourceGroupActions(group: ISCMResourceGroup): IAction[] {
-		return this.getActions(MenuId.SCMResourceGroupContext, this.getSCMResourceGroupURI(group), group.id).primary;
+		return this.getActions(MenuId.SCMResourceGroupContext, group).primary;
 	}
 
 	getResourceGroupContextActions(group: ISCMResourceGroup): IAction[] {
-		return this.getActions(MenuId.SCMResourceGroupContext, this.getSCMResourceGroupURI(group), group.id).secondary;
+		return this.getActions(MenuId.SCMResourceGroupContext, group).secondary;
 	}
 
 	getResourceActions(resource: ISCMResource): IAction[] {
-		return this.getActions(MenuId.SCMResourceContext, this.getSCMResourceURI(resource), resource.resourceGroupId).primary;
+		return this.getActions(MenuId.SCMResourceContext, resource).primary;
 	}
 
 	getResourceContextActions(resource: ISCMResource): IAction[] {
-		return this.getActions(MenuId.SCMResourceContext, this.getSCMResourceURI(resource), resource.resourceGroupId).secondary;
-	}
-
-	private getSCMResourceGroupURI(resourceGroup: ISCMResourceGroup): URI {
-		return URI.from({
-			scheme: 'scm',
-			authority: this.activeProviderContextKey.get(),
-			path: `/${resourceGroup.id}`
-		});
-	}
-
-	private getSCMResourceURI(resource: ISCMResource): URI {
-		return URI.from({
-			scheme: 'scm',
-			authority: this.activeProviderContextKey.get(),
-			path: `/${resource.resourceGroupId}/${JSON.stringify(resource.uri)}`
-		});
+		return this.getActions(MenuId.SCMResourceContext, resource).secondary;
 	}
 
 	private static readonly NoActions = { primary: [], secondary: [] };
 
-	private getActions(menuId: MenuId, context: URI, resourceGroupId: string): { primary: IAction[]; secondary: IAction[]; } {
+	private getActions(menuId: MenuId, resource: ISCMResourceGroup | ISCMResource): { primary: IAction[]; secondary: IAction[]; } {
 		if (!this.scmService.activeProvider) {
 			return SCMMenus.NoActions;
 		}
 
 		const contextKeyService = this.contextKeyService.createScoped();
-		contextKeyService.createKey('scmResourceGroup', resourceGroupId);
+		contextKeyService.createKey('scmResourceGroup', getSCMResourceContextKey(resource));
 
 		const menu = this.menuService.createMenu(menuId, contextKeyService);
 		const primary = [];
 		const secondary = [];
 		const result = { primary, secondary };
-		fillInActions(menu, context, result, g => g === 'inline');
+		fillInActions(menu, { shouldForwardArgs: true }, result, g => g === 'inline');
 
 		menu.dispose();
 		contextKeyService.dispose();

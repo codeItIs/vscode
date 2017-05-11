@@ -86,9 +86,9 @@ export class WalkThroughInput extends EditorInput {
 		return this.telemetryFrom || 'walkThrough';
 	}
 
-	getTelemetryDescriptor(): { [key: string]: any; } {
+	getTelemetryDescriptor(): object {
 		const descriptor = super.getTelemetryDescriptor();
-		descriptor['resourceTag'] = this.getTelemetryFrom();
+		descriptor['target'] = this.getTelemetryFrom();
 		descriptor['resource'] = telemetryURIDescriptor(this.resource);
 		return descriptor;
 	}
@@ -120,22 +120,6 @@ export class WalkThroughInput extends EditorInput {
 		}
 
 		return this.promise;
-
-		// TODO: replicate above?
-		// return this.promise.then(ref => {
-		// 	const model = ref.object;
-
-		// 	if (!(model instanceof ResourceEditorModel)) {
-		// 		ref.dispose();
-		// 		this.promise = null;
-		// 		return TPromise.wrapError(`Unexpected model for ResourceInput: ${this.resource}`); // TODO@Ben eventually also files should be supported, but we guard due to the dangerous dispose of the model in dispose()
-		// 	}
-
-		// 	// TODO@Joao this should never happen
-		// 	model.onDispose(() => this.dispose());
-
-		// 	return model;
-		// });
 	}
 
 	matches(otherInput: any): boolean {
@@ -175,7 +159,7 @@ export class WalkThroughInput extends EditorInput {
 		if (!this.resolveTime) {
 			this.resolveTime = Date.now();
 			this.telemetryService.publicLog('resolvingInput', {
-				resourceTag: this.getTelemetryFrom(),
+				target: this.getTelemetryFrom(),
 			});
 		}
 	}
@@ -183,7 +167,7 @@ export class WalkThroughInput extends EditorInput {
 	private disposeTelemetry(reason?: ShutdownReason) {
 		if (this.resolveTime) {
 			this.telemetryService.publicLog('disposingInput', {
-				resourceTag: this.getTelemetryFrom(),
+				target: this.getTelemetryFrom(),
 				timeSpent: (Date.now() - this.resolveTime) / 60,
 				reason: reason ? ShutdownReason[reason] : 'DISPOSE',
 				maxTopScroll: this.maxTopScroll,

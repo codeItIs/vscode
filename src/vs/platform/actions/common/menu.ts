@@ -8,12 +8,9 @@
 import Event, { Emitter } from 'vs/base/common/event';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import { TPromise } from 'vs/base/common/winjs.base';
-import { localize } from 'vs/nls';
 import { ContextKeyExpr, IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
-import { MenuId, MenuRegistry, MenuItemAction, IMenu, IMenuItem } from 'vs/platform/actions/common/actions';
+import { MenuId, MenuRegistry, MenuItemAction, IMenu, IMenuItem, IMenuActionOptions } from 'vs/platform/actions/common/actions';
 import { ICommandService } from 'vs/platform/commands/common/commands';
-import { values } from 'vs/base/common/collections';
-import { index } from 'vs/base/common/arrays';
 
 type MenuItemGroup = [string, IMenuItem[]];
 
@@ -30,17 +27,7 @@ export class Menu implements IMenu {
 		@IContextKeyService private _contextKeyService: IContextKeyService
 	) {
 		startupSignal.then(_ => {
-			let menuItems = MenuRegistry.getMenuItems(id);
-
-			if (id === MenuId.CommandPalette) {
-				const ids = index(menuItems, i => i.command.id);
-				const commandMenuItems = values(MenuRegistry.commands)
-					.filter(c => !ids[c.id])
-					.map(command => ({ command }));
-
-				menuItems = [...menuItems, ...commandMenuItems];
-			}
-
+			const menuItems = MenuRegistry.getMenuItems(id);
 			const keysFilter = new Set<string>();
 
 			let group: MenuItemGroup;
@@ -82,20 +69,14 @@ export class Menu implements IMenu {
 		return this._onDidChange.event;
 	}
 
-	getActions(arg?: any): [string, MenuItemAction[]][] {
+	getActions(options: IMenuActionOptions): [string, MenuItemAction[]][] {
 		const result: [string, MenuItemAction[]][] = [];
 		for (let group of this._menuGroups) {
 			const [id, items] = group;
 			const activeActions: MenuItemAction[] = [];
 			for (const item of items) {
 				if (this._contextKeyService.contextMatchesRules(item.when)) {
-					let title = item.command.title;
-
-					if (this.id === MenuId.CommandPalette && item.command.category) {
-						title = localize('', "{0}: {1}", item.command.category, title);
-					}
-
-					const action = new MenuItemAction(item.command, title, item.alt, arg, this._commandService);
+					const action = new MenuItemAction(item.command, item.alt, options, this._commandService);
 					action.order = item.order; //TODO@Ben order is menu item property, not an action property
 					activeActions.push(action);
 				}
@@ -153,6 +134,8 @@ export class Menu implements IMenu {
 		}
 
 		// sort on titles
-		return a.command.title.localeCompare(b.command.title);
+		const aTitle = typeof a.command.title === 'string' ? a.command.title : a.command.title.value;
+		const bTitle = typeof b.command.title === 'string' ? b.command.title : b.command.title.value;
+		return aTitle.localeCompare(bTitle);
 	}
 }

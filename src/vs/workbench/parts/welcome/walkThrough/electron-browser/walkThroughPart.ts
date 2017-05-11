@@ -11,15 +11,13 @@ import { ScrollbarVisibility } from 'vs/base/common/scrollable';
 import * as strings from 'vs/base/common/strings';
 import URI from 'vs/base/common/uri';
 import { TPromise } from 'vs/base/common/winjs.base';
-import { DefaultConfig } from 'vs/editor/common/config/defaultConfig';
-import { IEditorOptions, IEditorViewState } from 'vs/editor/common/editorCommon';
 import { $, Dimension, Builder } from 'vs/base/browser/builder';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import { EditorOptions } from 'vs/workbench/common/editor';
 import { BaseEditor } from 'vs/workbench/browser/parts/editor/baseEditor';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { WalkThroughInput } from 'vs/workbench/parts/welcome/walkThrough/node/walkThroughInput';
-import { IThemeService } from 'vs/workbench/services/themes/common/themeService';
+import { IWorkbenchThemeService } from 'vs/workbench/services/themes/common/workbenchThemeService';
 import { IOpenerService } from 'vs/platform/opener/common/opener';
 import { marked } from 'vs/base/common/marked/marked';
 import { IModeService } from 'vs/editor/common/services/modeService';
@@ -34,8 +32,13 @@ import { Scope } from 'vs/workbench/common/memento';
 import { RawContextKey, IContextKey, IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { once } from 'vs/base/common/event';
-import SCMPreview from 'vs/workbench/parts/scm/browser/scmPreview';
 import { isObject } from 'vs/base/common/types';
+import { ICommandService, CommandsRegistry } from 'vs/platform/commands/common/commands';
+import { ICodeEditorService } from 'vs/editor/common/services/codeEditorService';
+import { Parts, IPartService } from 'vs/workbench/services/part/common/partService';
+import { IEditorOptions } from 'vs/editor/common/config/editorOptions';
+import { IMessageService, Severity } from 'vs/platform/message/common/message';
+import { IThemeService } from 'vs/platform/theme/common/themeService';
 
 export const WALK_THROUGH_FOCUS = new RawContextKey<boolean>('interactivePlaygroundFocus', false);
 
@@ -47,7 +50,7 @@ interface IViewState {
 	scrollLeft: number;
 }
 
-interface IWalkThroughEditorViewState extends IEditorViewState {
+interface IWalkThroughEditorViewState {
 	viewState: IViewState;
 }
 
@@ -55,6 +58,26 @@ interface IWalkThroughEditorViewStates {
 	0?: IWalkThroughEditorViewState;
 	1?: IWalkThroughEditorViewState;
 	2?: IWalkThroughEditorViewState;
+}
+
+class WalkThroughCodeEditor extends CodeEditor {
+
+	constructor(
+		domElement: HTMLElement,
+		options: IEditorOptions,
+		private telemetryData: Object,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@ICodeEditorService codeEditorService: ICodeEditorService,
+		@ICommandService commandService: ICommandService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IThemeService themeService: IThemeService
+	) {
+		super(domElement, options, instantiationService, codeEditorService, commandService, contextKeyService, themeService);
+	}
+
+	getTelemetryData() {
+		return this.telemetryData;
+	}
 }
 
 export class WalkThroughPart extends BaseEditor {
@@ -71,7 +94,7 @@ export class WalkThroughPart extends BaseEditor {
 	constructor(
 		@ITelemetryService telemetryService: ITelemetryService,
 		@IInstantiationService private instantiationService: IInstantiationService,
-		@IThemeService private themeService: IThemeService,
+		@IWorkbenchThemeService protected themeService: IWorkbenchThemeService,
 		@IOpenerService private openerService: IOpenerService,
 		@IFileService private fileService: IFileService,
 		@IModelService protected modelService: IModelService,
@@ -79,9 +102,11 @@ export class WalkThroughPart extends BaseEditor {
 		@IStorageService private storageService: IStorageService,
 		@IContextKeyService private contextKeyService: IContextKeyService,
 		@IConfigurationService private configurationService: IConfigurationService,
-		@IModeService private modeService: IModeService
+		@IModeService private modeService: IModeService,
+		@IMessageService private messageService: IMessageService,
+		@IPartService private partService: IPartService
 	) {
-		super(WalkThroughPart.ID, telemetryService);
+		super(WalkThroughPart.ID, telemetryService, themeService);
 		this.editorFocus = WALK_THROUGH_FOCUS.bindTo(this.contextKeyService);
 	}
 
@@ -186,6 +211,10 @@ export class WalkThroughPart extends BaseEditor {
 				from: this.input instanceof WalkThroughInput ? this.input.getTelemetryFrom() : undefined
 			});
 		}
+		if (uri.scheme === 'command' && uri.path === 'git.clone' && !CommandsRegistry.getCommand('git.clone')) {
+			this.messageService.show(Severity.Info, localize('walkThrough.gitNotFound', "It looks like Git is not installed on your system."));
+			return;
+		}
 		this.openerService.open(this.addFrom(uri));
 	}
 
@@ -275,7 +304,7 @@ export class WalkThroughPart extends BaseEditor {
 			})
 			.then(model => {
 				const content = model.main.textEditorModel.getLinesContent().join('\n');
-				if (strings.endsWith(input.getResource().path, '.html')) {
+				if (!strings.endsWith(input.getResource().path, '.md')) {
 					this.content.innerHTML = content;
 					this.updateSizeClasses();
 					this.updateMarkerClasses();
@@ -308,7 +337,12 @@ export class WalkThroughPart extends BaseEditor {
 					const id = `snippet-${model.uri.fragment}`;
 					const div = innerContent.querySelector(`#${id.replace(/\./g, '\\.')}`) as HTMLElement;
 
-					const editor = this.instantiationService.createInstance(CodeEditor, div, this.getEditorOptions(snippet.textEditorModel.getModeId()));
+					const options = this.getEditorOptions(snippet.textEditorModel.getModeId());
+					const telemetryData = {
+						target: this.input instanceof WalkThroughInput ? this.input.getTelemetryFrom() : undefined,
+						snippet: i
+					};
+					const editor = this.instantiationService.createInstance(WalkThroughCodeEditor, div, options, telemetryData);
 					editor.setModel(model);
 					this.contentDisposables.push(editor);
 
@@ -344,7 +378,7 @@ export class WalkThroughPart extends BaseEditor {
 						}
 					}));
 
-					this.contentDisposables.push(this.themeService.onDidColorThemeChange(theme => editor.updateOptions({ theme: theme.id })));
+					this.contentDisposables.push(this.themeService.onDidColorThemeChange(theme => editor.updateOptions({ theme: theme.id }))); // TODO@theme this should be done from the editor itself and not from the outside
 					this.contentDisposables.push(this.configurationService.onDidUpdateConfiguration(() => editor.updateOptions(this.getEditorOptions(snippet.textEditorModel.getModeId()))));
 
 					this.contentDisposables.push(once(editor.onMouseDown)(() => {
@@ -385,24 +419,33 @@ export class WalkThroughPart extends BaseEditor {
 		return {
 			...isObject(config) ? config : Object.create(null),
 			scrollBeyondLastLine: false,
-			scrollbar: DefaultConfig.editor.scrollbar,
+			scrollbar: {
+				verticalScrollbarSize: 14,
+				horizontal: 'auto',
+				useShadows: true,
+				verticalHasArrows: false,
+				horizontalHasArrows: false
+			},
 			overviewRulerLanes: 3,
 			fixedOverflowWidgets: true,
 			lineNumbersMinChars: 1,
 			theme: this.themeService.getColorTheme().id,
+			minimap: false,
 		};
 	}
 
 	private updateMarkerClasses() {
 		const innerContent = this.content.firstElementChild;
-		if (SCMPreview.enabled && innerContent) {
+
+		// TODO@christof
+		if (true && innerContent) {
 			innerContent.classList.add('scmEnabled');
 		}
 	}
 
 	private style(div: HTMLElement) {
-		const styleElement = document.querySelector('.monaco-editor-background');
-		const {color, backgroundColor, fontFamily, fontWeight, fontSize} = window.getComputedStyle(styleElement);
+		const styleElement = this.partService.getContainer(Parts.EDITOR_PART); // TODO@theme styles should come in via theme registry
+		const { color, backgroundColor, fontFamily, fontWeight, fontSize } = window.getComputedStyle(styleElement);
 		div.style.color = color;
 		div.style.backgroundColor = backgroundColor;
 		div.style.fontFamily = fontFamily;
@@ -412,9 +455,9 @@ export class WalkThroughPart extends BaseEditor {
 
 	private expandMacros(input: string) {
 		return input.replace(/kb\(([a-z.\d\-]+)\)/gi, (match: string, kb: string) => {
-			const [keybinding] = this.keybindingService.lookupKeybindings(kb);
-			const shortcut = keybinding ? this.keybindingService.getLabelFor(keybinding) : UNBOUND_COMMAND;
-			return `<span class="shortcut">${shortcut}</span>`;
+			const keybinding = this.keybindingService.lookupKeybinding(kb);
+			const shortcut = keybinding ? keybinding.getLabel() : UNBOUND_COMMAND;
+			return `<span class="shortcut">${strings.escape(shortcut)}</span>`;
 		});
 	}
 
@@ -422,8 +465,8 @@ export class WalkThroughPart extends BaseEditor {
 		const keys = this.content.querySelectorAll('.shortcut[data-command]');
 		Array.prototype.forEach.call(keys, (key: Element) => {
 			const command = key.getAttribute('data-command');
-			const [keybinding] = command && this.keybindingService.lookupKeybindings(command);
-			const label = keybinding ? this.keybindingService.getLabelFor(keybinding) : UNBOUND_COMMAND;
+			const keybinding = command && this.keybindingService.lookupKeybinding(command);
+			const label = keybinding ? keybinding.getLabel() : UNBOUND_COMMAND;
 			key.appendChild(document.createTextNode(label));
 		});
 	}

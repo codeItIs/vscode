@@ -11,7 +11,6 @@
 	background-color: transparent!important;
 	color: #333;
 	-webkit-user-select: initial;
-	overflow: hidden; /* prevents the terminal output being incorrectly placed over the title */
 	position: relative;
 }
 .vs-dark .monaco-workbench .panel.integrated-terminal { color: #CCC; }
@@ -19,8 +18,9 @@
 
 .monaco-workbench .panel.integrated-terminal .terminal-outer-container {
 	height: 100%;
-	padding: 0 20px;
+	padding-left: 20px; /*Don't use right padding in case xterm.js misbehaves*/
 	width: 100%;
+	box-sizing: border-box;
 }
 
 .monaco-workbench .panel.integrated-terminal .terminal-wrapper {
@@ -33,6 +33,11 @@
 	top: 0;
 }
 
+.monaco-workbench .panel.integrated-terminal .xterm a:not(.xterm-invalid-link) {
+	/* To support message box sizing */
+	position: relative;
+}
+
 .monaco-workbench .panel.integrated-terminal .terminal-wrapper > div {
 	height: 100%;
 }
@@ -43,6 +48,19 @@
 	right: -20px;
 	bottom: 0;
 	left: 0;
+}
+
+.monaco-workbench .panel.integrated-terminal {
+	font-variant-ligatures: none;
+}
+
+.monaco-workbench .panel.integrated-terminal.enable-ligatures {
+	font-variant-ligatures: normal;
+}
+
+
+.monaco-workbench .panel.integrated-terminal.disable-bold .xterm-bold {
+	font-weight: normal !important;
 }
 
 /* Terminal actions */

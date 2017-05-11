@@ -12,21 +12,21 @@ import { Disposable } from 'vs/base/common/lifecycle';
 import * as strings from 'vs/base/common/strings';
 import { clearNode } from 'vs/base/browser/dom';
 import { renderHtml } from 'vs/base/browser/htmlContentRenderer';
-import { StyleMutator } from 'vs/base/browser/styleMutator';
+import { FastDomNode, createFastDomNode } from 'vs/base/browser/fastDomNode';
 import { Widget } from 'vs/base/browser/ui/widget';
 import { ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
 import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
 import { RawContextKey, IContextKey, IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
-import { KeybindingsRegistry } from 'vs/platform/keybinding/common/keybindingsRegistry';
-import { GlobalScreenReaderNVDA } from 'vs/editor/common/config/commonEditorConfig';
-import { ICommonCodeEditor, IEditorContribution, EditorContextKeys } from 'vs/editor/common/editorCommon';
-import { editorAction, CommonEditorRegistry, EditorAction, EditorCommand, Command } from 'vs/editor/common/editorCommonExtensions';
+import { ICommonCodeEditor, IEditorContribution } from 'vs/editor/common/editorCommon';
+import { EditorContextKeys } from 'vs/editor/common/editorContextKeys';
+import { editorAction, CommonEditorRegistry, EditorAction, EditorCommand } from 'vs/editor/common/editorCommonExtensions';
 import { ICodeEditor, IOverlayWidget, IOverlayWidgetPosition } from 'vs/editor/browser/editorBrowser';
 import { editorContribution } from 'vs/editor/browser/editorBrowserExtensions';
 import { ToggleTabFocusModeAction } from 'vs/editor/contrib/toggleTabFocusMode/common/toggleTabFocusMode';
+import { registerThemingParticipant } from 'vs/platform/theme/common/themeService';
+import { editorWidgetBackground, widgetShadow, contrastBorder } from 'vs/platform/theme/common/colorRegistry';
 
 const CONTEXT_ACCESSIBILITY_WIDGET_VISIBLE = new RawContextKey<boolean>('accessibilityHelpWidgetVisible', false);
-const TOGGLE_EXPERIMENTAL_SCREEN_READER_SUPPORT_COMMAND_ID = 'toggleExperimentalScreenReaderSupport';
 
 @editorContribution
 class AccessibilityHelpController extends Disposable implements IEditorContribution {
@@ -72,7 +72,7 @@ class AccessibilityHelpWidget extends Widget implements IOverlayWidget {
 
 	private _editor: ICodeEditor;
 	private _keybindingService: IKeybindingService;
-	private _domNode: HTMLElement;
+	private _domNode: FastDomNode<HTMLElement>;
 	private _isVisible: boolean;
 	private _isVisibleKey: IContextKey<boolean>;
 
@@ -83,12 +83,11 @@ class AccessibilityHelpWidget extends Widget implements IOverlayWidget {
 		this._keybindingService = keybindingService;
 		this._isVisibleKey = CONTEXT_ACCESSIBILITY_WIDGET_VISIBLE.bindTo(contextKeyService);
 
-		this._domNode = document.createElement('div');
-		this._domNode.className = 'accessibilityHelpWidget';
-		StyleMutator.setWidth(this._domNode, AccessibilityHelpWidget.WIDTH);
-		StyleMutator.setHeight(this._domNode, AccessibilityHelpWidget.HEIGHT);
-
-		this._domNode.style.display = 'none';
+		this._domNode = createFastDomNode(document.createElement('div'));
+		this._domNode.setClassName('accessibilityHelpWidget');
+		this._domNode.setWidth(AccessibilityHelpWidget.WIDTH);
+		this._domNode.setHeight(AccessibilityHelpWidget.HEIGHT);
+		this._domNode.setDisplay('none');
 		this._domNode.setAttribute('role', 'tooltip');
 		this._domNode.setAttribute('aria-hidden', 'true');
 		this._isVisible = false;
@@ -98,7 +97,7 @@ class AccessibilityHelpWidget extends Widget implements IOverlayWidget {
 				this._layout();
 			}
 		}));
-		this.onblur(this._domNode, () => {
+		this.onblur(this._domNode.domNode, () => {
 			this.hide();
 		});
 
@@ -115,7 +114,7 @@ class AccessibilityHelpWidget extends Widget implements IOverlayWidget {
 	}
 
 	public getDomNode(): HTMLElement {
-		return this._domNode;
+		return this._domNode.domNode;
 	}
 
 	public getPosition(): IOverlayWidgetPosition {
@@ -131,17 +130,17 @@ class AccessibilityHelpWidget extends Widget implements IOverlayWidget {
 		this._isVisible = true;
 		this._isVisibleKey.set(true);
 		this._layout();
-		this._domNode.style.display = 'block';
+		this._domNode.setDisplay('block');
 		this._domNode.setAttribute('aria-hidden', 'false');
-		this._domNode.tabIndex = 0;
+		this._domNode.domNode.tabIndex = 0;
 		this._buildContent();
-		this._domNode.focus();
+		this._domNode.domNode.focus();
 	}
 
 	private _descriptionForCommand(commandId: string, msg: string, noKbMsg: string): string {
-		let [kb] = this._keybindingService.lookupKeybindings(commandId);
+		let kb = this._keybindingService.lookupKeybinding(commandId);
 		if (kb) {
-			return strings.format(msg, this._keybindingService.getAriaLabelFor(kb));
+			return strings.format(msg, kb.getAriaLabel());
 		}
 		return strings.format(noKbMsg, commandId);
 	}
@@ -165,7 +164,7 @@ class AccessibilityHelpWidget extends Widget implements IOverlayWidget {
 
 		text += '\n\n' + nls.localize('outroMsg', "You can dismiss this tooltip and return to the editor by pressing Escape.");
 
-		this._domNode.appendChild(renderHtml({
+		this._domNode.domNode.appendChild(renderHtml({
 			formattedText: text
 		}));
 	}
@@ -176,10 +175,10 @@ class AccessibilityHelpWidget extends Widget implements IOverlayWidget {
 		}
 		this._isVisible = false;
 		this._isVisibleKey.reset();
-		this._domNode.style.display = 'none';
+		this._domNode.setDisplay('none');
 		this._domNode.setAttribute('aria-hidden', 'true');
-		this._domNode.tabIndex = -1;
-		clearNode(this._domNode);
+		this._domNode.domNode.tabIndex = -1;
+		clearNode(this._domNode.domNode);
 
 		this._editor.focus();
 	}
@@ -188,10 +187,10 @@ class AccessibilityHelpWidget extends Widget implements IOverlayWidget {
 		let editorLayout = this._editor.getLayoutInfo();
 
 		let top = Math.round((editorLayout.height - AccessibilityHelpWidget.HEIGHT) / 2);
-		StyleMutator.setTop(this._domNode, top);
+		this._domNode.setTop(top);
 
 		let left = Math.round((editorLayout.width - AccessibilityHelpWidget.WIDTH) / 2);
-		StyleMutator.setLeft(this._domNode, left);
+		this._domNode.setLeft(left);
 	}
 }
 
@@ -205,7 +204,7 @@ class ShowAccessibilityHelpAction extends EditorAction {
 			alias: 'Show Accessibility Help',
 			precondition: null,
 			kbOpts: {
-				kbExpr: EditorContextKeys.Focus,
+				kbExpr: EditorContextKeys.focus,
 				primary: KeyMod.Alt | KeyCode.F1
 			}
 		});
@@ -227,28 +226,24 @@ CommonEditorRegistry.registerEditorCommand(new AccessibilityHelpCommand({
 	handler: x => x.hide(),
 	kbOpts: {
 		weight: CommonEditorRegistry.commandWeight(100),
-		kbExpr: EditorContextKeys.Focus,
+		kbExpr: EditorContextKeys.focus,
 		primary: KeyCode.Escape, secondary: [KeyMod.Shift | KeyCode.Escape]
 	}
 }));
 
-class ToggleExperimentalScreenReaderSupportCommand extends Command {
-	constructor() {
-		super({
-			id: TOGGLE_EXPERIMENTAL_SCREEN_READER_SUPPORT_COMMAND_ID,
-			precondition: null,
-			kbOpts: {
-				weight: KeybindingsRegistry.WEIGHT.workbenchContrib(),
-				kbExpr: null,
-				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KEY_R
-			}
-		});
+registerThemingParticipant((theme, collector) => {
+	let widgetBackground = theme.getColor(editorWidgetBackground);
+	if (widgetBackground) {
+		collector.addRule(`.monaco-editor.${theme.selector} .accessibilityHelpWidget { background-color: ${widgetBackground}; }`);
 	}
 
-	public runCommand(accessor: ServicesAccessor, args: any): void {
-		let currentValue = GlobalScreenReaderNVDA.getValue();
-		GlobalScreenReaderNVDA.setValue(!currentValue);
+	let widgetShadowColor = theme.getColor(widgetShadow);
+	if (widgetShadowColor) {
+		collector.addRule(`.monaco-editor.${theme.selector} .accessibilityHelpWidget { box-shadow: 0 2px 8px ${widgetShadowColor}; }`);
 	}
-}
 
-CommonEditorRegistry.registerEditorCommand(new ToggleExperimentalScreenReaderSupportCommand());
+	let hcBorder = theme.getColor(contrastBorder);
+	if (hcBorder) {
+		collector.addRule(`.monaco-editor.${theme.selector} .accessibilityHelpWidget { border: 2px solid ${hcBorder}; }`);
+	}
+});

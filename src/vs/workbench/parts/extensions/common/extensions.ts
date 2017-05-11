@@ -28,7 +28,7 @@ export interface IExtension {
 	state: ExtensionState;
 	name: string;
 	displayName: string;
-	identifier: string;
+	id: string;
 	publisher: string;
 	publisherDisplayName: string;
 	version: string;
@@ -83,4 +83,5 @@ export const ConfigurationKey = 'extensions';
 
 export interface IExtensionsConfiguration {
 	autoUpdate: boolean;
+	ignoreRecommendations: boolean;
 }

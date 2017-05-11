@@ -10,6 +10,7 @@ import { IJSONSchema } from 'vs/base/common/jsonSchema';
 import { Registry } from 'vs/platform/platform';
 import objects = require('vs/base/common/objects');
 import types = require('vs/base/common/types');
+import * as strings from 'vs/base/common/strings';
 import { ExtensionsRegistry, ExtensionMessageCollector } from 'vs/platform/extensions/common/extensionsRegistry';
 import { IJSONContributionRegistry, Extensions as JSONExtensions } from 'vs/platform/jsonschemas/common/jsonContributionRegistry';
 
@@ -122,13 +123,13 @@ class ConfigurationRegistry implements IConfigurationRegistry {
 		this.updateOverridePropertyPatternKey();
 	}
 
-	public registerDefaultConfigurations(defaultConnfigurations: IDefaultConfigurationExtension[]): void {
+	public registerDefaultConfigurations(defaultConfigurations: IDefaultConfigurationExtension[]): void {
 		const configurationNode: IConfigurationNode = {
 			id: 'defaultOverrides',
 			title: nls.localize('defaultConfigurations.title', "Default Configuration Overrides"),
 			properties: {}
 		};
-		for (const defaultConfiguration of defaultConnfigurations) {
+		for (const defaultConfiguration of defaultConfigurations) {
 			for (const key in defaultConfiguration.defaults) {
 				const defaultValue = defaultConfiguration.defaults[key];
 				if (OVERRIDE_PROPERTY_PATTERN.test(key) && typeof defaultValue === 'object') {
@@ -141,7 +142,9 @@ class ConfigurationRegistry implements IConfigurationRegistry {
 				}
 			}
 		}
-		this.registerConfiguration(configurationNode, false);
+		if (Object.keys(configurationNode.properties).length) {
+			this.registerConfiguration(configurationNode, false);
+		}
 	}
 
 	private validateAndRegisterProperties(configuration: IConfigurationNode, validate: boolean = true, overridable: boolean = false) {
@@ -246,7 +249,7 @@ class ConfigurationRegistry implements IConfigurationRegistry {
 	}
 
 	private computeOverridePropertyPattern(): void {
-		this.overridePropertyPattern = this.overrideIdentifiers.length ? OVERRIDE_PATTERN_WITH_SUBSTITUTION.replace('${0}', this.overrideIdentifiers.join('|')) : OVERRIDE_PROPERTY;
+		this.overridePropertyPattern = this.overrideIdentifiers.length ? OVERRIDE_PATTERN_WITH_SUBSTITUTION.replace('${0}', this.overrideIdentifiers.map(identifier => strings.createRegExp(identifier, false).source).join('|')) : OVERRIDE_PROPERTY;
 	}
 }
 
@@ -360,10 +363,8 @@ configurationExtPoint.setHandler(extensions => {
 
 		validateProperties(configuration, collector);
 
-		if (configuration.properties) {
-			configuration.id = extensions[i].description.id;
-			configurations.push(configuration);
-		}
+		configuration.id = extensions[i].description.id;
+		configurations.push(configuration);
 	}
 
 	configurationRegistry.registerConfigurations(configurations, false);

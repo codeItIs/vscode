@@ -12,9 +12,9 @@ import types = require('vs/base/common/types');
 import paths = require('vs/base/common/paths');
 import { Action } from 'vs/base/common/actions';
 import { VIEWLET_ID, TEXT_FILE_EDITOR_ID } from 'vs/workbench/parts/files/common/files';
-import { ITextFileEditorModel } from 'vs/workbench/services/textfile/common/textfiles';
+import { ITextFileEditorModel, ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
 import { BaseTextEditor } from 'vs/workbench/browser/parts/editor/textEditor';
-import { EditorOptions, TextEditorOptions } from 'vs/workbench/common/editor';
+import { EditorOptions, TextEditorOptions, IEditorCloseEvent } from 'vs/workbench/common/editor';
 import { BinaryEditorModel } from 'vs/workbench/common/editor/binaryEditorModel';
 import { FileEditorInput } from 'vs/workbench/parts/files/common/editors/fileEditorInput';
 import { ExplorerViewlet } from 'vs/workbench/parts/files/browser/explorerViewlet';
@@ -28,7 +28,7 @@ import { IHistoryService } from 'vs/workbench/services/history/common/history';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { CancelAction } from 'vs/platform/message/common/message';
 import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
-import { IThemeService } from 'vs/workbench/services/themes/common/themeService';
+import { IWorkbenchThemeService } from 'vs/workbench/services/themes/common/workbenchThemeService';
 import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
 import { IModeService } from 'vs/editor/common/services/modeService';
 
@@ -49,20 +49,30 @@ export class TextFileEditor extends BaseTextEditor {
 		@IHistoryService private historyService: IHistoryService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@IWorkbenchEditorService private editorService: IWorkbenchEditorService,
-		@IThemeService themeService: IThemeService,
-		@IEditorGroupService private editorGroupService: IEditorGroupService,
-		@IModeService modeService: IModeService
+		@IWorkbenchThemeService themeService: IWorkbenchThemeService,
+		@IEditorGroupService editorGroupService: IEditorGroupService,
+		@IModeService modeService: IModeService,
+		@ITextFileService textFileService: ITextFileService,
 	) {
-		super(TextFileEditor.ID, telemetryService, instantiationService, storageService, configurationService, themeService, modeService);
+		super(TextFileEditor.ID, telemetryService, instantiationService, storageService, configurationService, themeService, modeService, textFileService, editorGroupService);
 
 		// Clear view state for deleted files
 		this.toUnbind.push(this.fileService.onFileChanges(e => this.onFilesChanged(e)));
+
+		// React to editors closing to preserve view state
+		this.toUnbind.push(editorGroupService.getStacksModel().onWillCloseEditor(e => this.onWillCloseEditor(e)));
 	}
 
 	private onFilesChanged(e: FileChangesEvent): void {
 		const deleted = e.getDeleted();
 		if (deleted && deleted.length) {
 			this.clearTextEditorViewState(deleted.map(d => d.resource.toString()));
+		}
+	}
+
+	private onWillCloseEditor(e: IEditorCloseEvent): void {
+		if (e.editor === this.input && this.position === this.editorGroupService.getStacksModel().positionOfGroup(e.group)) {
+			this.doSaveTextEditorViewState(this.input);
 		}
 	}
 
@@ -103,9 +113,7 @@ export class TextFileEditor extends BaseTextEditor {
 		}
 
 		// Remember view settings if input changes
-		if (oldInput) {
-			this.saveTextEditorViewState(oldInput.getResource().toString());
-		}
+		this.doSaveTextEditorViewState(oldInput);
 
 		// Different Input (Reload)
 		return input.resolve(true).then(resolvedModel => {
@@ -161,7 +169,7 @@ export class TextFileEditor extends BaseTextEditor {
 
 			// Offer to create a file from the error if we have a file not found and the name is valid
 			if ((<IFileOperationResult>error).fileOperationResult === FileOperationResult.FILE_NOT_FOUND && paths.isValidBasename(paths.basename(input.getResource().fsPath))) {
-				return TPromise.wrapError(errors.create(toErrorMessage(error), {
+				return TPromise.wrapError<void>(errors.create(toErrorMessage(error), {
 					actions: [
 						new Action('workbench.files.action.createMissingFile', nls.localize('createFile', "Create File"), null, true, () => {
 							return this.fileService.updateContent(input.getResource(), '').then(() => {
@@ -181,7 +189,7 @@ export class TextFileEditor extends BaseTextEditor {
 			}
 
 			// Otherwise make sure the error bubbles up
-			return TPromise.wrapError(error);
+			return TPromise.wrapError<void>(error);
 		});
 	}
 
@@ -223,9 +231,7 @@ export class TextFileEditor extends BaseTextEditor {
 	public clearInput(): void {
 
 		// Keep editor view state in settings to restore when coming back
-		if (this.input) {
-			this.saveTextEditorViewState(this.input.getResource().toString());
-		}
+		this.doSaveTextEditorViewState(this.input);
 
 		// Clear Model
 		this.getControl().setModel(null);
@@ -237,11 +243,15 @@ export class TextFileEditor extends BaseTextEditor {
 	public shutdown(): void {
 
 		// Save View State
-		if (this.input) {
-			this.saveTextEditorViewState(this.input.getResource().toString());
-		}
+		this.doSaveTextEditorViewState(this.input);
 
 		// Call Super
 		super.shutdown();
+	}
+
+	private doSaveTextEditorViewState(input: FileEditorInput): void {
+		if (input && !input.isDisposed()) {
+			this.saveTextEditorViewState(input.getResource().toString());
+		}
 	}
 }

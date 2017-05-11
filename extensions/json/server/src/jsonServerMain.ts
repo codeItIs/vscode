@@ -7,7 +7,7 @@
 import {
 	createConnection, IConnection,
 	TextDocuments, TextDocument, InitializeParams, InitializeResult, NotificationType, RequestType,
-	DocumentRangeFormattingRequest, Disposable
+	DocumentRangeFormattingRequest, Disposable, Range
 } from 'vscode-languageserver';
 
 import { xhr, XHRResponse, configure as configureHttpRequests, getErrorStatusDescription } from 'request-light';
@@ -17,7 +17,6 @@ import URI from './utils/uri';
 import * as URL from 'url';
 import Strings = require('./utils/strings');
 import { JSONDocument, JSONSchema, LanguageSettings, getLanguageService } from 'vscode-json-languageservice';
-import { ProjectJSONContribution } from './jsoncontributions/projectJSONContribution';
 import { getLanguageModelCache } from './languageModelCache';
 
 import * as nls from 'vscode-nls';
@@ -33,6 +32,10 @@ namespace SchemaAssociationNotification {
 
 namespace VSCodeContentRequest {
 	export const type: RequestType<string, string, any, any> = new RequestType('vscode/content');
+}
+
+namespace ColorSymbolRequest {
+	export const type: RequestType<string, Range[], any, any> = new RequestType('json/colorSymbols');
 }
 
 // Create a connection for the server
@@ -71,7 +74,7 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
 		capabilities: {
 			// Tell the client that the server works in FULL text document sync mode
 			textDocumentSync: documents.syncKind,
-			completionProvider: clientDynamicRegisterSupport ? { resolveProvider: true, triggerCharacters: ['"', ':'] } : null,
+			completionProvider: clientSnippetSupport ? { resolveProvider: true, triggerCharacters: ['"', ':'] } : null,
 			hoverProvider: true,
 			documentSymbolProvider: true,
 			documentRangeFormattingProvider: false
@@ -119,9 +122,7 @@ let schemaRequestService = (uri: string): Thenable<string> => {
 let languageService = getLanguageService({
 	schemaRequestService,
 	workspaceContext,
-	contributions: [
-		new ProjectJSONContribution()
-	]
+	contributions: []
 });
 
 // The settings interface describes the server relevant settings part
@@ -275,6 +276,12 @@ connection.onDidChangeWatchedFiles((change) => {
 });
 
 let jsonDocuments = getLanguageModelCache<JSONDocument>(10, 60, document => languageService.parseJSONDocument(document));
+documents.onDidClose(e => {
+	jsonDocuments.onDocumentRemoved(e.document);
+});
+connection.onShutdown(() => {
+	jsonDocuments.dispose();
+});
 
 function getJSONDocument(document: TextDocument): JSONDocument {
 	return jsonDocuments.get(document);
@@ -305,6 +312,15 @@ connection.onDocumentSymbol(documentSymbolParams => {
 connection.onDocumentRangeFormatting(formatParams => {
 	let document = documents.get(formatParams.textDocument.uri);
 	return languageService.format(document, formatParams.range, formatParams.options);
+});
+
+connection.onRequest(ColorSymbolRequest.type, uri => {
+	let document = documents.get(uri);
+	if (document) {
+		let jsonDocument = getJSONDocument(document);
+		return languageService.findColorSymbols(document, jsonDocument);
+	}
+	return [];
 });
 
 // Listen on the connection

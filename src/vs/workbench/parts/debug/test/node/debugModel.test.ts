@@ -310,7 +310,7 @@ suite('Debug - Model', () => {
 		assert.equal(model.getWatchExpressions().length, 0);
 		const process = new Process({ name: 'mockProcess', type: 'node', request: 'launch' }, rawSession);
 		const thread = new Thread(process, 'mockthread', 1);
-		const stackFrame = new StackFrame(thread, 1, null, 'app.js', 1, 1);
+		const stackFrame = new StackFrame(thread, 1, null, 'app.js', { startLineNumber: 1, startColumn: 1, endLineNumber: undefined, endColumn: undefined });
 		model.addWatchExpression(process, stackFrame, 'console').done();
 		model.addWatchExpression(process, stackFrame, 'console').done();
 		let watchExpressions = model.getWatchExpressions();
@@ -338,7 +338,7 @@ suite('Debug - Model', () => {
 		assert.equal(model.getReplElements().length, 0);
 		const process = new Process({ name: 'mockProcess', type: 'node', request: 'launch' }, rawSession);
 		const thread = new Thread(process, 'mockthread', 1);
-		const stackFrame = new StackFrame(thread, 1, null, 'app.js', 1, 1);
+		const stackFrame = new StackFrame(thread, 1, null, 'app.js', { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 10 });
 		model.addReplExpression(process, stackFrame, 'myVariable').done();
 		model.addReplExpression(process, stackFrame, 'myVariable').done();
 		model.addReplExpression(process, stackFrame, 'myVariable').done();
@@ -358,28 +358,36 @@ suite('Debug - Model', () => {
 
 	test('repl output', () => {
 		model.appendToRepl('first line\n', severity.Error);
-		model.appendToRepl('second line', severity.Warning);
-		model.appendToRepl('second line', severity.Warning);
 		model.appendToRepl('second line', severity.Error);
+		model.appendToRepl('second line', severity.Error);
+		model.appendToRepl('third line', severity.Warning);
+		model.appendToRepl('third line', severity.Warning);
+		model.appendToRepl('fourth line', severity.Error);
 
 		let elements = <OutputElement[]>model.getReplElements();
-		assert.equal(elements.length, 3);
+		assert.equal(elements.length, 4);
 		assert.equal(elements[0].value, 'first line');
 		assert.equal(elements[0].counter, 1);
 		assert.equal(elements[0].severity, severity.Error);
 		assert.equal(elements[1].value, 'second line');
 		assert.equal(elements[1].counter, 2);
-		assert.equal(elements[1].severity, severity.Warning);
+		assert.equal(elements[1].severity, severity.Error);
+		assert.equal(elements[2].value, 'third line');
+		assert.equal(elements[2].counter, 2);
+		assert.equal(elements[2].severity, severity.Warning);
+		assert.equal(elements[3].value, 'fourth line');
+		assert.equal(elements[3].counter, 1);
+		assert.equal(elements[3].severity, severity.Error);
 
 		model.appendToRepl('1', severity.Warning);
 		elements = <OutputElement[]>model.getReplElements();
-		assert.equal(elements.length, 4);
-		assert.equal(elements[3].value, '1');
-		assert.equal(elements[3].severity, severity.Warning);
+		assert.equal(elements.length, 5);
+		assert.equal(elements[4].value, '1');
+		assert.equal(elements[4].severity, severity.Warning);
 
 		const keyValueObject = { 'key1': 2, 'key2': 'value' };
 		model.appendToRepl(new OutputNameValueElement('fake', keyValueObject), null);
-		const element = <OutputNameValueElement>model.getReplElements()[4];
+		const element = <OutputNameValueElement>model.getReplElements()[5];
 		assert.equal(element.value, 'Object');
 		assert.deepEqual(element.valueObj, keyValueObject);
 

@@ -54,7 +54,7 @@
 		},
 		{
 			"match": "\\bnullptr\\b",
-			"name": "variable.language.cpp"
+			"name": "constant.language.cpp"
 		},
 		{
 			"match": "\\btemplate\\b\\s*",
@@ -63,6 +63,10 @@
 		{
 			"match": "\\b(const_cast|dynamic_cast|reinterpret_cast|static_cast)\\b\\s*",
 			"name": "keyword.operator.cast.cpp"
+		},
+		{
+			"match": "::",
+			"name": "punctuation.separator.namespace.access.cpp"
 		},
 		{
 			"match": "\\b(and|and_eq|bitand|bitor|compl|not|not_eq|or|or_eq|typeid|xor|xor_eq|alignof|alignas)\\b",
@@ -144,13 +148,13 @@
 			"begin": "\\{",
 			"beginCaptures": {
 				"0": {
-					"name": "punctuation.section.block.begin.c"
+					"name": "punctuation.section.block.begin.bracket.curly.c"
 				}
 			},
 			"end": "\\}",
 			"endCaptures": {
 				"0": {
-					"name": "punctuation.section.block.end.c"
+					"name": "punctuation.section.block.end.bracket.curly.c"
 				}
 			},
 			"name": "meta.block.cpp",
@@ -318,13 +322,13 @@
 							"begin": "\\{",
 							"beginCaptures": {
 								"0": {
-									"name": "punctuation.section.block.begin.cpp"
+									"name": "punctuation.section.block.begin.bracket.curly.cpp"
 								}
 							},
 							"end": "(\\})(\\s*\\n)?",
 							"endCaptures": {
 								"1": {
-									"name": "punctuation.section.block.end.cpp"
+									"name": "punctuation.section.block.end.bracket.curly.cpp"
 								},
 								"2": {
 									"name": "invalid.illegal.you-forgot-semicolon.cpp"
@@ -361,13 +365,13 @@
 							"begin": "\\{",
 							"beginCaptures": {
 								"0": {
-									"name": "punctuation.section.block.begin.c"
+									"name": "punctuation.section.block.begin.bracket.curly.c"
 								}
 							},
 							"end": "\\}|(?=\\s*#\\s*endif\\b)",
 							"endCaptures": {
 								"0": {
-									"name": "punctuation.section.block.end.c"
+									"name": "punctuation.section.block.end.bracket.curly.c"
 								}
 							},
 							"patterns": [
@@ -451,5 +455,5 @@
 			]
 		}
 	},
-	"version": "https://github.com/atom/language-c/commit/80db38512efabb3030d600a8d8f8b6d91abbc96b"
+	"version": "https://github.com/atom/language-c/commit/a74c2f967d73e802a67fa6e971a8e8dedf076597"
 }

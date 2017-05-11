@@ -188,7 +188,6 @@
 	height: 5em;
 	font-size: 1.3em;
 	text-align: left;
-	outline: none;
 	cursor: pointer;
 	white-space: nowrap;
 }
@@ -199,6 +198,7 @@
 }
 
 .monaco-workbench > .part.editor > .content .welcomePage .commands li button h3 {
+	font-weight: normal;
 	font-size: 1em;
 	margin: 0;
 	margin-bottom: .25em;
@@ -227,19 +227,24 @@
 
 .vs-dark .monaco-workbench > .part.editor > .content .welcomePage .commands li button {
 	color: #828282;
-	background: #191919;
+	background: rgba(0, 0, 0, .2);
 }
 
 .vs-dark .monaco-workbench > .part.editor > .content .welcomePage .commands li button:hover {
-	background: #2a2d2e;
+	background: rgba(200, 235, 255, .072);
 }
 
-.vs .monaco-workbench > .part.editor > .content .welcomePage .commands li button:focus {
-	outline: 1px solid rgba(0, 0, 0, .6);
+.vs-dark .monaco-workbench > .part.editor > .content .welcomePage.extra-dark .commands li button {
+	background: rgba(200, 235, 255, .042);
 }
 
-.vs-dark .monaco-workbench > .part.editor > .content .welcomePage .commands li button:focus {
-	outline: 1px solid rgba(255, 255, 255, .5);
+.vs-dark .monaco-workbench > .part.editor > .content .welcomePage.extra-dark .commands li button:hover {
+	background: rgba(200, 235, 255, .072);
+}
+
+.monaco-workbench > .part.editor > .content .welcomePage .commands li button:focus {
+	outline-style: solid;
+	outline-width: 1px;
 }
 
 .hc-black .monaco-workbench > .part.editor > .content .welcomePage .commands li button {
@@ -255,11 +260,21 @@
 	outline-offset: -5px;
 }
 
+.monaco-workbench > .part.editor > .content .welcomePage .commands li button .currentKeymap {
+	display: none;
+}
+.monaco-workbench > .part.editor > .content .welcomePage .commands li button .installKeymap.installed {
+	display: none;
+}
+.monaco-workbench > .part.editor > .content .welcomePage .commands li button .currentKeymap.installed {
+	display: inline;
+}
+
 .monaco-workbench > .part.editor > .content .welcomePageContainer.max-height-685px .title {
 	display: none;
 }
 
-.file-icons-enabled .show-file-icons .vs_code_welcome_page\.html-name-file-icon.html-ext-file-icon.html-lang-file-icon.file-icon::before {
+.file-icons-enabled .show-file-icons .vs_code_welcome_page-name-file-icon.file-icon::before {
 	content: ' ';
 	background-image: url('../../code-icon.svg');
 }
@@ -278,12 +293,24 @@
 .monaco-workbench.linux > .part.editor > .content .welcomePage .linux-only {
 	display: initial;
 }
+.monaco-workbench.mac > .part.editor > .content .welcomePage li.mac-only {
+	display: list-item;
+}
+.monaco-workbench.windows > .part.editor > .content .welcomePage li.windows-only {
+	display: list-item;
+}
+.monaco-workbench.linux > .part.editor > .content .welcomePage li.linux-only {
+	display: list-item;
+}
 
 .monaco-workbench > .part.editor > .content .welcomePageContainer .scm-only {
 	display: none;
 }
 .monaco-workbench > .part.editor > .content .welcomePageContainer.scmEnabled .scm-only {
 	display: initial;
+}
+.monaco-workbench > .part.editor > .content .welcomePageContainer.scmEnabled li.scm-only {
+	display: list-item;
 }
 .monaco-workbench > .part.editor > .content .welcomePageContainer.scmEnabled .git-only {
 	display: none;
